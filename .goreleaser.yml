@@ -1,75 +1,50 @@
-archives:
-  - files:
-      # Ensure only built binary is archived
-      - 'none*'
-    format: zip
-    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
-before:
-  hooks:
-    - 'go mod download'
-builds:
-  - # Binary naming only required for Terraform CLI 0.12
-    binary: '{{ .ProjectName }}_v{{ .Version }}_x5'
-    env:
-      - CGO_ENABLED=0
-    flags:
-      - -trimpath
-    goos:
-      - darwin
-      - freebsd
-      - linux
-      - windows
-    goarch:
-      - '386'
-      - amd64
-      - arm
-      - arm64
-    ignore:
-      - goarch: arm
-        goos: windows
-      - goarch: arm64
-        goos: freebsd
-      - goarch: arm64
-        goos: windows
-    ldflags:
-      - -s -w -X main.Version={{.Version}}
-    mod_timestamp: '{{ .CommitTimestamp }}'
-checksum:
-  algorithm: sha256
-  extra_files:
-    - glob: 'terraform-registry-manifest.json'
-      name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
-  name_template: '{{ .ProjectName }}_{{ .Version }}_SHA256SUMS'
-publishers:
-  - checksum: true
-    # Terraform CLI 0.10 - 0.11 perform discovery via HTTP headers on releases.hashicorp.com
-    # For providers which have existed since those CLI versions, exclude
-    # discovery by setting the protocol version headers to 5.
-    cmd: |
-      hc-releases upload -product {{ .ProjectName }} -version {{ .Version }} -file={{ .ArtifactPath }}={{ .ArtifactName }} -header=x-terraform-protocol-version=5 -header=x-terraform-protocol-versions=5.0
-    env:
-      - HC_RELEASES_HOST={{ .Env.HC_RELEASES_HOST }}
-      - HC_RELEASES_KEY={{ .Env.HC_RELEASES_KEY }}
-    extra_files:
-      - glob: 'terraform-registry-manifest.json'
-        name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
-    name: upload
-    signature: true
-release:
-  extra_files:
-    - glob: 'terraform-registry-manifest.json'
-      name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
-  ids:
-    - none
-signs:
-  - args: ["sign", "--dearmor", "--file", "${artifact}", "--out", "${signature}"]
-    artifacts: checksum
-    cmd: signore
-    signature: ${artifact}.sig
-  - args: ["sign", "--dearmor", "--file", "${artifact}", "--out", "${signature}"]
-    artifacts: checksum
-    cmd: signore
-    id: key-id
-    signature: ${artifact}.72D7468F.sig
-snapshot:
-  name_template: "{{ .Tag }}-next"
+# This GitHub action can publish assets for release when a tag is created.
+# Currently its setup to run on any tag that matches the pattern "v*" (ie. v0.1.0).
+#
+# This uses an action (hashicorp/ghaction-import-gpg) that assumes you set your 
+# private key in the `GPG_PRIVATE_KEY` secret and passphrase in the `PASSPHRASE`
+# secret. If you would rather own your own GPG handling, please fork this action
+# or use an alternative one for key handling.
+#
+# You will need to pass the `--batch` flag to `gpg` in your signing step 
+# in `goreleaser` to indicate this is being used in a non-interactive mode.
+#
+name: release
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Unshallow
+        run: git fetch --prune --unshallow
+      -
+        name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      -
+        name: Import GPG key
+        id: import_gpg
+        uses: hashicorp/ghaction-import-gpg@v2.1.0
+        env:
+          # These secrets will need to be configured for the repository:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          PASSPHRASE: ${{ secrets.PASSPHRASE }}
+      -
+        name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v3.0.0
+        with:
+          version: latest
+          args: release --rm-dist
+        env:
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          # GitHub sets this automatically
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}s
