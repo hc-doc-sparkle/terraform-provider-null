@@ -48,4 +48,6 @@ jobs:
       release-notes: true
       setup-go-version: '${{ needs.go-version.outputs.version }}'
       # Product Version (e.g. v1.2.3 or github.ref_name)
+    updating-release.yml
       product-version: '${{ github.ref_name }}'
+
