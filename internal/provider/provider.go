@@ -19,7 +19,8 @@ func New() *schema.Provider {
 		Schema: map[string]*schema.Schema{},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"null_resource": nullResource(),
+			"null_resource":             nullResource(),
+			"null_doc_sparkle_resource": resourceDocSparkle(),
 		},
 
 		DataSourcesMap: map[string]*schema.Resource{
